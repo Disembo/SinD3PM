@@ -1,0 +1,19 @@
+# directory to save logs and checkpoints.
+# autoencoder and diffusion will save their logs in `/ae` and `/diffusion` respectively.
+log_dir: ./logs/test
+image_path: ./data/balloons.png
+image_size: 64
+device: mps
+
+num_channels: 64
+num_res_blocks: 1
+channel_mult: 1,2
+
+
+batch_size: 16
+mini_batch_size: 16
+num_epoch: 5000
+lr: 0.005  # '5e-3' would be parsed as a string, not a float.
+
+n_samples: 4
+sample_size: [64, 64]  # height, width
