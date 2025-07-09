@@ -37,11 +37,8 @@ def train_d3pm(config: dict):
 
     # save gt image
     torchvision.utils.save_image(
-        [batch[0].float()],
-        os.path.join(log_dir, 'gt_image.png'),
-        nrow=2,
-        normalize=True,
-        value_range=(0, N - 1)
+        [batch[0].float() / (N - 1)],
+        os.path.join(log_dir, 'gt_image.png')
     )
 
     # print and save summary

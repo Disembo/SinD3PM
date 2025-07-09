@@ -44,11 +44,7 @@ def train_ddpm(config: dict):
     torchvision.utils.save_image(
         [batch[0].float()],
         os.path.join(log_dir, 'gt_image.png'),
-        nrow=2,
-        normalize=True,
-        value_range=(0, 1)
     )
-    return
 
     # print and save summary
     stat = summary(model, input_data=[batch, torch.zeros(batch.shape[0], dtype=torch.long)], device=device)
