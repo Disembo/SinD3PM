@@ -1,10 +1,12 @@
 # directory to save logs and checkpoints.
 # autoencoder and diffusion will save their logs in `/ae` and `/diffusion` respectively.
-log_dir: ./logs/test
+log_dir: ./logs/test_d3pm_absorbing
 image_path: ./data/balloons.png
 image_size: 64
 device: mps
 
+forward_type: absorbing  # type of the transition matrix
+num_classes: 8  # number of classes for discretized state per pixel
 num_channels: 64
 num_res_blocks: 1
 channel_mult: 1,2
@@ -12,7 +14,9 @@ channel_mult: 1,2
 
 batch_size: 16
 mini_batch_size: 16
-num_epoch: 5000
+num_epoch: 1000
+save_every: 200
+log_every: 100
 lr: 0.005  # '5e-3' would be parsed as a string, not a float.
 
 n_samples: 4

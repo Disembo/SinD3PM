@@ -7,17 +7,20 @@ from tqdm import tqdm
 class DDPM:
 
     def __init__(self,
+                 net: nn.Module,
                  device,
                  n_steps: int = 1000,
                  min_beta: float = 0.0001,
                  max_beta: float = 0.02,
                  pred_x0: bool = True,
                  simple_var: bool = True):
+        self.net = net.to(device)
         self.device = device
-        self.betas = torch.linspace(min_beta, max_beta, n_steps).to(device)
+
+        self.betas = torch.linspace(min_beta, max_beta, n_steps).to(self.device)
         self.alphas = 1 - self.betas
         self.alpha_bars = torch.cumprod(self.alphas, dim=0)
-        self.alpha_bars_prev = torch.hstack([torch.tensor([1.0], device=device), self.alpha_bars[:-1]])
+        self.alpha_bars_prev = torch.hstack([torch.tensor([1.0], device=self.device), self.alpha_bars[:-1]])
         
         self.sqrt_alpha_bars = torch.sqrt(self.alpha_bars)
         self.sqrt_one_minus_alpha_bars = torch.sqrt(1 - self.alpha_bars)
@@ -35,26 +38,30 @@ class DDPM:
         self.n_steps = n_steps
         self.pred_x0 = pred_x0
         
-    def sample_forward(self, x: torch.Tensor, t: int | torch.Tensor, eps=None):
+    def _sample_forward(self, x: torch.Tensor, t: int | torch.Tensor, eps=None):
         if eps is None:
             eps = torch.randn_like(x)
         coef1 = self.sqrt_alpha_bars[t].reshape(-1, 1, 1, 1)
         coef2 = self.sqrt_one_minus_alpha_bars[t].reshape(-1, 1, 1, 1)
         res = coef1 * x + coef2 * eps
         return res
-    
-    def infer(self, n_sample: int, net: nn.Module, size: tuple[int, int], channels: int):
-        img_shape = (n_sample, channels, *size)
-        x = torch.randn(img_shape).to(self.device)
-        with torch.no_grad():
-            for t in tqdm(range(self.n_steps - 1, -1, -1), desc='Diffusion sampling'):
-                x = self.sample_backward_step(x, t, net)
-        return x
 
-    def sample_backward_step(self, x_t, t, net):
+    def calc_loss(self, x_0: torch.Tensor):
+        x_0 = x_0.to(self.device)
+        t = torch.randint(0, self.n_steps, (x_0.shape[0],)).to(self.device)
+        eps = torch.randn_like(x_0)
+        x_t = self._sample_forward(x_0, t, eps)
+        out = self.net(x_t, t)
+        if self.pred_x0:
+            loss = F.mse_loss(out, x_0)
+        else:
+            loss = F.mse_loss(out, eps)
+        return loss
+
+    def _sample_backward_step(self, x_t: torch.Tensor, t: int):
         n = x_t.shape[0]
         t_tensor = torch.tensor([t] * n, dtype=torch.long).to(x_t.device)
-        out = net(x_t, t_tensor)
+        out = self.net(x_t, t_tensor)
         var = self.posterior_variance[t]
         if self.pred_x0:
             x_0 = out
@@ -65,15 +72,11 @@ class DDPM:
         noise *= torch.sqrt(var)
         x_prev = mean + noise
         return x_prev
-    
-    def calc_loss(self, net: nn.Module, x_0: torch.Tensor):
-        x_0 = x_0.to(self.device)
-        t = torch.randint(0, self.n_steps, (x_0.shape[0],)).to(self.device)
-        eps = torch.randn_like(x_0)
-        x_t = self.sample_forward(x_0, t, eps)
-        out = net(x_t, t)
-        if self.pred_x0:
-            loss = F.mse_loss(out, x_0)
-        else:
-            loss = F.mse_loss(out, eps)
-        return loss
+
+    def infer(self, n_sample: int, size: tuple[int, int], channels: int):
+        img_shape = (n_sample, channels, *size)
+        x = torch.randn(img_shape).to(self.device)
+        with torch.no_grad():
+            for t in tqdm(range(self.n_steps - 1, -1, -1), desc='Diffusion sampling'):
+                x = self._sample_backward_step(x, t)
+        return x

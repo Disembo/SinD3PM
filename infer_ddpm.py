@@ -8,14 +8,13 @@ from diffusion import DDPM, create_unet
 from utils import load_config
 
 
-def infer(config: dict):
+def infer_ddpm(config: dict):
     device = config['device']
     epochs = config['num_epoch']
     model_path = os.path.join(config['log_dir'], 'ckpt', f'ckpt_{epochs}.pth')
     n_samples = config['n_samples']
     size = config['sample_size']
 
-    ddpm = DDPM(device)
     model = create_unet(
         image_size=config['image_size'],
         num_channels=config['num_channels'],
@@ -23,8 +22,8 @@ def infer(config: dict):
         channel_mult=config['channel_mult']
     )
     model.load_state_dict(torch.load(model_path, weights_only=True)['model'])
-    model.to(device)
-    output = ddpm.infer(n_samples, model, size, 3)
+    ddpm = DDPM(model, device)
+    output = ddpm.infer(n_samples, size, 3)
 
     # save images
     out_dir = os.path.join(config['log_dir'], f'out_{epochs}_{size[1]}x{size[0]}')
@@ -41,7 +40,7 @@ def main():
     parser.add_argument("--config", type=str, required=True,
                         help="Path to the configuration yaml file.")
     args = parser.parse_args()
-    infer(load_config(args.config))
+    infer_ddpm(load_config(args.config))
 
 
 if __name__ == '__main__':

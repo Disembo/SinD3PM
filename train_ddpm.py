@@ -1,6 +1,7 @@
 import os
 from argparse import ArgumentParser
 
+import torchvision
 import yaml
 import torch
 from torchinfo import summary
@@ -19,18 +20,16 @@ def ema_update(target_params: dict, source_params: dict, rate=0.99):
         target_params[key] = target_params[key] * rate + source_params[key] * (1 - rate)
 
 
-def train(config: dict):
+def train_ddpm(config: dict):
     device = config['device']
     lr = config['lr']
     num_epoch = config['num_epoch']
     log_dir = config['log_dir']
     ckpt_dir = os.path.join(log_dir, 'ckpt')
     os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(ckpt_dir, exist_ok=True)
 
     writer = SummaryWriter(log_dir=log_dir)
-
-    ddpm = DDPM(device)
-    batch = build_batch(config)
 
     model = create_unet(
         image_size=config['image_size'],
@@ -38,7 +37,18 @@ def train(config: dict):
         num_res_blocks=config['num_res_blocks'],
         channel_mult=config['channel_mult']
     )
-    model.to(device)
+    ddpm = DDPM(model, device)
+    batch = build_batch(config).to(device)
+
+    # save gt image
+    torchvision.utils.save_image(
+        [batch[0].float()],
+        os.path.join(log_dir, 'gt_image.png'),
+        nrow=2,
+        normalize=True,
+        value_range=(0, 1)
+    )
+    return
 
     # print and save summary
     stat = summary(model, input_data=[batch, torch.zeros(batch.shape[0], dtype=torch.long)], device=device)
@@ -59,12 +69,12 @@ def train(config: dict):
     assert batch_size % mini_batch_size == 0
     optim_step = batch_size // mini_batch_size
 
-    loss_list = []
     for epoch in tqdm(range(num_epoch), desc="Training diffusion"):
+        model.train()
         optimizer.zero_grad()
         average_loss = 0
         for mini_step in range(optim_step):
-            loss = ddpm.calc_loss(model, batch)
+            loss = ddpm.calc_loss(batch)
             loss /= optim_step
             average_loss += loss.item()
             loss.backward()
@@ -74,10 +84,6 @@ def train(config: dict):
         ema_update(ema_params, model.state_dict())
 
         if (epoch + 1) % 100 == 0:
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            loss_list.append(average_loss)
-
             writer.add_scalar('loss', average_loss, epoch + 1)
             writer.add_scalar('learning_rate', optimizer.state_dict()['param_groups'][0]['lr'], epoch + 1)
             writer.flush()
@@ -109,7 +115,7 @@ def main():
                         help="Path to the configuration yaml file.")
     args = parser.parse_args()
     config = load_config(args.config)
-    train(config)
+    train_ddpm(config)
 
 
 if __name__ == '__main__':

@@ -39,10 +39,44 @@ def create_unet(
         channel_mult = tuple(int(ch_mult) for ch_mult in channel_mult.split(","))
 
     return UNetModel(
-        image_size=image_size,
         in_channels=3,
         model_channels=num_channels,
         out_channels=3,
+        num_res_blocks=num_res_blocks,
+        dropout=dropout,
+        channel_mult=channel_mult
+    )
+
+
+def create_unet_categorical(
+    image_size: int,
+    num_classes: int,
+    num_channels: int,
+    num_res_blocks: int,
+    channel_mult: str = "",
+    dropout=0,
+):
+    if channel_mult == "":
+        if image_size == 512:
+            channel_mult = (0.5, 1, 1, 2, 2, 4, 4)
+        elif image_size == 256:
+            channel_mult = (1, 1, 2, 2, 4, 4)
+        elif image_size == 128:
+            channel_mult = (1, 1, 2, 3, 4)
+        elif image_size == 64:
+            channel_mult = (1, 2, 3, 4)
+        elif image_size == 32:
+            channel_mult = (1, 2, 4)
+        else:
+            raise ValueError(f"unsupported image size: {image_size}")
+    else:
+        channel_mult = tuple(int(ch_mult) for ch_mult in channel_mult.split(","))
+
+    return UNetCategoricalModel(
+        in_channels=3,
+        model_channels=num_channels,
+        out_channels=3,
+        n_classes=num_classes,
         num_res_blocks=num_res_blocks,
         dropout=dropout,
         channel_mult=channel_mult
@@ -236,7 +270,6 @@ class UNetModel(nn.Module):
 
     def __init__(
         self,
-        image_size,
         in_channels,
         model_channels,
         out_channels,
@@ -248,7 +281,6 @@ class UNetModel(nn.Module):
     ):
         super().__init__()
 
-        self.image_size = image_size
         self.in_channels = in_channels
         self.model_channels = model_channels
         self.out_channels = out_channels
@@ -332,20 +364,19 @@ class UNetModel(nn.Module):
             zero_module(conv_nd(dims, input_ch, out_channels, 3, padding=1)),
         )
 
-    def forward(self, x, timesteps, y=None):
+    def forward(self, x, timesteps):
         """
         Apply the model to an input batch.
 
         :param x: an [N x C x ...] Tensor of inputs.
         :param timesteps: a 1-D batch of timesteps.
-        :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
 
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
 
-        h = x.type(self.dtype) if y is None else th.cat([x, y], dim=1).type(self.dtype)
+        h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb)
             hs.append(h)
@@ -357,3 +388,40 @@ class UNetModel(nn.Module):
             h = module(h, emb)
         h = h.type(x.dtype)
         return self.out(h)
+
+
+class UNetCategoricalModel(UNetModel):
+
+    def __init__(self,
+                 in_channels,
+                 model_channels,
+                 out_channels,
+                 n_classes,
+                 num_res_blocks,
+                 dropout=0,
+                 channel_mult=(1, 2, 4, 8),
+                 conv_resample=True):
+        super().__init__(in_channels, model_channels, out_channels,
+                         num_res_blocks, dropout, channel_mult,
+                         conv_resample, dims=2)
+
+        self.n_classes = n_classes
+        conv_in_channels = self.out[-1].in_channels
+        conv_out_channels = out_channels * n_classes
+        self.out[-1] = zero_module(
+            nn.Conv2d(conv_in_channels, conv_out_channels, 3, padding=1)
+        )
+
+    def forward(self, x, timesteps):
+        """
+        Apply the model to an input batch.
+
+        :param x: an (N, C, H, W) Tensor of inputs, with int values in the range [0, N-1].
+        :param timesteps: a 1-D batch of timesteps.
+        :return: an (N, C, H, W, n_classes) Tensor of outputs.
+        """
+        x = x.float() / self.n_classes   # normalize to [0, 1]
+        x = super().forward(x, timesteps)
+        x = x.view(x.shape[0], self.out_channels, self.n_classes, *x.shape[2:])
+        x = x.permute(0, 1, 3, 4, 2).contiguous()
+        return x
