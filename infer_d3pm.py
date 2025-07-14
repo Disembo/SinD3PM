@@ -28,7 +28,11 @@ def infer_d3pm(config: dict):
         channel_mult=config['channel_mult']
     )
     model.load_state_dict(torch.load(model_path, weights_only=True))
-    d3pm = D3PM(model, device, forward_type=config['forward_type'], n_steps=1000, num_classes=N, hybrid_loss_coef=0.0)
+    d3pm = D3PM(model, device,
+                forward_type=config['forward_type'],
+                n_steps=config['num_steps'],
+                num_classes=N,
+                hybrid_loss_coef=config['hybrid_loss_coef'])
 
     # image sequences to gif
     seq = d3pm.infer_with_image_sequence(n_samples, size, 3, stride=40)

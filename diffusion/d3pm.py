@@ -11,7 +11,7 @@ class D3PM:
         device,
         n_steps: int,
         num_classes: int = 8,
-        forward_type: str = "uniform",
+        forward_type: str = "absorbing",
         hybrid_loss_coef=0.001,
     ):
         self.device = device

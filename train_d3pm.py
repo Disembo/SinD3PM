@@ -31,7 +31,11 @@ def train_d3pm(config: dict):
         num_res_blocks=config['num_res_blocks'],
         channel_mult=config['channel_mult']
     )
-    d3pm = D3PM(model, device, forward_type=config['forward_type'], n_steps=1000, num_classes=N, hybrid_loss_coef=0.0)
+    d3pm = D3PM(model, device,
+                forward_type=config['forward_type'],
+                n_steps=config['num_steps'],
+                num_classes=N,
+                hybrid_loss_coef=config['hybrid_loss_coef'])
     batch = build_batch(config).to(device)
     batch = (batch * (N - 1)).round().long().clamp(0, N - 1)  # discretize to N bins
 
@@ -42,7 +46,8 @@ def train_d3pm(config: dict):
     )
 
     # print and save summary
-    stat = summary(model, input_data=[batch, torch.zeros(batch.shape[0], dtype=torch.long)], device=device)
+    stat = summary(model, input_data=[batch, torch.zeros(batch.shape[0], dtype=torch.long)],
+                   device=device, depth=5)
     with open(os.path.join(log_dir, 'model_summary.txt'), 'w') as f:
         f.write(str(stat))
 
